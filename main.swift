@@ -68,6 +68,12 @@ func log(_ msg: @autoclosure () -> String) {
     logFile?.write(line)
 }
 
+/// The privacy permission tapdrag needs. macOS 27 renamed Accessibility to
+/// Device Control and Data Access.
+let permissionName = ProcessInfo.processInfo.isOperatingSystemAtLeast(
+    OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0))
+    ? "Device Control and Data Access" : "Accessibility"
+
 func fail(_ msg: String) -> Never {
     let line = "tapdrag: \(msg)\n".data(using: .utf8)!
     FileHandle.standardError.write(line)
@@ -379,8 +385,8 @@ func installEventTap() {
     guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                       options: .defaultTap, eventsOfInterest: mask,
                                       callback: tapCallback, userInfo: nil) else {
-        fail("cannot create event tap. Grant Accessibility permission to this binary in "
-             + "System Settings > Privacy & Security > Accessibility, then restart it.")
+        fail("cannot create event tap. Allow tapdrag in System Settings > Privacy & Security > "
+             + "\(permissionName), then restart it.")
     }
     eventTap = tap
     let src = CFMachPortCreateRunLoopSource(nil, tap, 0)
@@ -492,12 +498,12 @@ func usage() -> Never {
     exit(2)
 }
 
-/// For --test-click: prompts once, then waits until Accessibility is granted.
+/// For --test-click: prompts once, then waits until the permission is granted.
 func requirePostAccess() {
     guard !CGPreflightPostEventAccess() else { return }
     _ = CGRequestPostEventAccess()
-    FileHandle.standardError.write(("tapdrag: waiting for Accessibility permission "
-        + "(System Settings > Privacy & Security > Accessibility)\n").data(using: .utf8)!)
+    FileHandle.standardError.write(("tapdrag: waiting for the \(permissionName) permission "
+        + "(System Settings > Privacy & Security > \(permissionName))\n").data(using: .utf8)!)
     while !CGPreflightPostEventAccess() {
         Thread.sleep(forTimeInterval: 2)
     }

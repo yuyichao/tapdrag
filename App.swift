@@ -1,4 +1,4 @@
-// Menu bar item, Accessibility permission flow and login item for tapdrag.app.
+// Menu bar item, permission flow and login item for tapdrag.app.
 
 import AppKit
 import ServiceManagement
@@ -32,7 +32,7 @@ final class AppController: NSObject, NSMenuDelegate {
             activate()
         } else {
             _ = CGRequestPostEventAccess()
-            log("waiting for Accessibility permission")
+            log("waiting for the \(permissionName) permission")
             permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
                 guard CGPreflightPostEventAccess() else { return }
                 timer.invalidate()
@@ -42,7 +42,7 @@ final class AppController: NSObject, NSMenuDelegate {
         updateIcon()
     }
 
-    /// Runs once Accessibility is granted.
+    /// Runs once the permission is granted.
     private func activate() {
         installEventTap()
         let dm = DeviceManager()
@@ -73,13 +73,13 @@ final class AppController: NSObject, NSMenuDelegate {
         if let dm = deviceManager {
             status = enabled ? "Running (\(dm.count) trackpad\(dm.count == 1 ? "" : "s"))" : "Paused"
         } else {
-            status = "Waiting for Accessibility permission"
+            status = "Waiting for \(permissionName) permission"
         }
         let statusLine = NSMenuItem(title: status, action: nil, keyEquivalent: "")
         statusLine.isEnabled = false
         menu.addItem(statusLine)
         if deviceManager == nil {
-            menu.addItem(item("Open Accessibility Settings…", #selector(openAccessibilitySettings)))
+            menu.addItem(item("Open \(permissionName) Settings…", #selector(openPermissionSettings)))
         }
         menu.addItem(.separator())
 
@@ -115,7 +115,7 @@ final class AppController: NSObject, NSMenuDelegate {
         return item
     }
 
-    @objc private func openAccessibilitySettings() {
+    @objc private func openPermissionSettings() {
         NSWorkspace.shared.open(URL(string:
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }

@@ -35,9 +35,9 @@ jobs:
 
       # The SIGNING_CERT_P12 / SIGNING_CERT_PASSWORD secrets hold the
       # "tapdrag Code Signing" certificate (see README.md). With it, every build
-      # has the same signing identity, so macOS keeps the Accessibility grant
-      # across upgrades. Without it (e.g. pull requests from forks) the build is
-      # ad-hoc signed.
+      # has the same signing identity, so macOS keeps the Device Control and
+      # Data Access (formerly Accessibility) grant across upgrades. Without it
+      # (e.g. pull requests from forks) the build is ad-hoc signed.
       - name: Import signing certificate
         env:
           CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}

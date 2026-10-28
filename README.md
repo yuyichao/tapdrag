@@ -40,8 +40,8 @@ cmake --build build --target dmg     # build/tapdrag-0.1.0.dmg
 The build signs the app with the **tapdrag Code Signing** certificate if it is
 in your keychain (see [Signing certificate](#signing-certificate)). Otherwise
 it is ad-hoc signed, and after every rebuild you have to remove tapdrag from
-the Accessibility list and add it again. CMake prints which one it uses
-(`-- Signing: …`). To use a different certificate, configure with
+the Device Control and Data Access list and add it again. CMake prints which
+one it uses (`-- Signing: …`). To use a different certificate, configure with
 `-DTAPDRAG_SIGN_IDENTITY="…"`; `-` forces ad-hoc signing.
 
 GitHub Actions builds the disk image (arm64 only) on every push. Download it
@@ -63,7 +63,8 @@ the tag, then creates a GitHub release with the image attached. Tags must be
 
 ### Signing certificate
 
-macOS ties the Accessibility permission to the app's signing identity. An
+macOS ties the Device Control and Data Access permission to the app's signing
+identity. An
 ad-hoc signature changes with every build, so each upgrade looks like a new app.
 Signed with a certificate, the identity is "`local.tapdrag` signed by this
 certificate", which stays the same, and the permission survives upgrades. A
@@ -116,10 +117,11 @@ other. To create it and store it:
    ```
    cmake -B build -DTAPDRAG_SIGN_IDENTITY=
    ```
-   Then build, install, and grant Accessibility one last time.
+   Then build, install, and grant Device Control and Data Access one last
+   time.
 
 If you ever replace the certificate, the identity changes once and you grant
-Accessibility again.
+the permission again.
 
 ## Installing
 
@@ -128,8 +130,10 @@ Open `tapdrag-0.1.0.dmg` and drag **tapdrag** onto **Applications**. Or run
 `-DCMAKE_INSTALL_PREFIX=…`. Quit a running tapdrag before replacing it.
 
 Start it from Applications. It has no Dock icon, only a hand icon in the menu
-bar. On first launch macOS asks for Accessibility. Allow **tapdrag** under
-System Settings → Privacy & Security → Accessibility. The icon stays greyed out
+bar. On first launch macOS asks for the **Device Control and Data Access**
+permission, which was called **Accessibility** before macOS 27. Allow
+**tapdrag** under System Settings → Privacy & Security → Device Control and
+Data Access (or Accessibility). The icon stays greyed out
 until you do, then tapdrag starts working.
 
 The menu has these items:
@@ -173,9 +177,9 @@ Move the pointer over the VM, and inside the guest run `xev` or
 This posts one middle click after 3 s. If the guest shows button 2, synthetic
 events reach it.
 
-Programs started from Terminal use *Terminal's* Accessibility permission, not
-tapdrag's. Allow Terminal (or your terminal app) once for this test, and remove
-it afterwards if you like.
+Programs started from Terminal use *Terminal's* Device Control and Data Access
+permission, not tapdrag's. Allow Terminal (or your terminal app) once for this
+test, and remove it afterwards if you like.
 
 ## Settings
 

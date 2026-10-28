@@ -17,12 +17,14 @@ endif()
 set(TAPDRAG_BUNDLE_ID local.tapdrag CACHE STRING "Bundle identifier")
 set(TAPDRAG_SIGN_IDENTITY "" CACHE STRING
   "codesign identity. Empty: \"tapdrag Code Signing\" if it is in the keychain, else ad-hoc (\"-\"). \
-With ad-hoc signing Accessibility must be granted again after every rebuild.")
+With ad-hoc signing the Device Control and Data Access (Accessibility before macOS 27) \
+permission must be granted again after every rebuild.")
 
 find_program(CODESIGN codesign REQUIRED)
 
 # Without the certificate every build gets a new identity and macOS forgets
-# the Accessibility grant. See "Signing certificate" in README.md.
+# the Device Control and Data Access (formerly Accessibility) grant.
+# See "Signing certificate" in README.md.
 set(sign_identity "${TAPDRAG_SIGN_IDENTITY}")
 if(sign_identity STREQUAL "")
   execute_process(COMMAND security find-identity -p codesigning
@@ -34,7 +36,7 @@ if(sign_identity STREQUAL "")
   endif()
 endif()
 if(sign_identity STREQUAL "-")
-  message(STATUS "Signing: ad-hoc (Accessibility must be granted again after each rebuild)")
+  message(STATUS "Signing: ad-hoc (the app's permission must be granted again after each rebuild)")
 else()
   message(STATUS "Signing: ${sign_identity}")
 endif()
