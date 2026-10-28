@@ -1,0 +1,13 @@
+# CMake build trees
+/build/
+/build-*/
+CMakeUserPresets.json
+
+# Binary built in-tree by hand (swiftc ... -o tapdrag)
+/tapdrag
+
+# macOS / editors
+.DS_Store
+*.swp
+.vscode/
+.idea/
