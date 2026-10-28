@@ -32,7 +32,7 @@ add_custom_command(OUTPUT "${bridge_stamp}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/MTBridge.h"
   VERBATIM)
 
-add_executable(tapdrag MACOSX_BUNDLE main.swift App.swift "${bridge_stamp}")
+add_executable(tapdrag MACOSX_BUNDLE main.swift App.swift Settings.swift "${bridge_stamp}")
 target_compile_options(tapdrag PRIVATE
   "SHELL:-import-objc-header ${CMAKE_CURRENT_SOURCE_DIR}/MTBridge.h")
 set_target_properties(tapdrag PROPERTIES

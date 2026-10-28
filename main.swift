@@ -24,14 +24,34 @@ struct Config {
     var dragTimeout = 0.30   // seconds after a tap during which a new touch starts a drag/double tap
     var moveThreshold = 0.03 // max normalized finger travel (0..1 of pad size) for a tap
     var clickGap = 0.05      // min seconds between a release and the next press (see Poster.down)
+    var clickEnabled = Set(Button.allCases) // N-finger tap clicks
+    var dragEnabled = Set(Button.allCases)  // N-finger tap, then hold, drags
     var debug = false        // log to stderr
 
-    /// Tunables can be persisted with e.g. `defaults write local.tapdrag tapTime -float 0.25`.
+    // UserDefaults keys. Settings are edited in the Settings window, or with e.g.
+    // `defaults write local.tapdrag tapTime -float 0.25`.
+    static func clickKey(_ b: Button) -> String { "\(b)Click" } // leftClick, rightClick, middleClick
+    static func dragKey(_ b: Button) -> String { "\(b)Drag" }
+
+    static var registeredDefaults: [String: Any] {
+        let c = Config()
+        var d: [String: Any] = ["tapTime": c.tapTime, "dragTimeout": c.dragTimeout,
+                                "moveThreshold": c.moveThreshold, "clickGap": c.clickGap]
+        for b in Button.allCases {
+            d[clickKey(b)] = true
+            d[dragKey(b)] = true
+        }
+        return d
+    }
+
+    /// Needs `registeredDefaults` registered first.
     mutating func load(from defaults: UserDefaults) {
-        if defaults.object(forKey: "tapTime") != nil { tapTime = defaults.double(forKey: "tapTime") }
-        if defaults.object(forKey: "dragTimeout") != nil { dragTimeout = defaults.double(forKey: "dragTimeout") }
-        if defaults.object(forKey: "moveThreshold") != nil { moveThreshold = defaults.double(forKey: "moveThreshold") }
-        if defaults.object(forKey: "clickGap") != nil { clickGap = defaults.double(forKey: "clickGap") }
+        tapTime = defaults.double(forKey: "tapTime")
+        dragTimeout = defaults.double(forKey: "dragTimeout")
+        moveThreshold = defaults.double(forKey: "moveThreshold")
+        clickGap = defaults.double(forKey: "clickGap")
+        clickEnabled = Set(Button.allCases.filter { defaults.bool(forKey: Config.clickKey($0)) })
+        dragEnabled = Set(Button.allCases.filter { defaults.bool(forKey: Config.dragKey($0)) })
     }
 }
 
@@ -57,7 +77,7 @@ func fail(_ msg: String) -> Never {
 
 // MARK: - Buttons and event posting
 
-enum Button: Int64 {
+enum Button: Int64, CaseIterable {
     case left = 0, right = 1, middle = 2
 
     init?(fingers: Int) {
@@ -109,6 +129,7 @@ final class Poster {
     private var heldClickState: Int64 = 1
     private var lastDown: (time: TimeInterval, button: Button, location: CGPoint, clickState: Int64)?
     private var lastUp: TimeInterval = 0
+    private var pressCount = 0
 
     private func post(_ type: CGEventType, _ button: Button, at loc: CGPoint, clickState: Int64) {
         guard let ev = CGEvent(mouseEventSource: source, mouseType: type,
@@ -139,8 +160,19 @@ final class Poster {
         lastDown = (now, button, loc, clickState)
         post(button.downType, button, at: loc, clickState: clickState)
         held = button
+        pressCount += 1
         heldClickState = clickState
         log("POST \(button) down (clickState \(clickState))")
+    }
+
+    /// Press and release after holding for clickGap, so the guest sees two
+    /// separate transitions instead of a press and release that got merged.
+    func click(_ button: Button) {
+        down(button)
+        let press = pressCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(config.clickGap, 0.02)) { [self] in
+            if press == pressCount { up() }
+        }
     }
 
     func up() {
@@ -161,17 +193,20 @@ struct Touch {
 }
 
 final class Engine {
+    // `pressed` says whether the button is already down. It is false when that
+    // button's click is turned off but its drag is on: the press then waits
+    // until the touch turns out to be a drag.
     enum State: CustomStringConvertible {
         case idle
-        case tapped(Button)       // button is down, waiting for drag/double tap or timeout
-        case dragOrDouble(Button) // button is down, a new touch arrived after the tap
-        case dragging(Button)     // button is down until all fingers lift
+        case tapped(Button, pressed: Bool)       // waiting for drag/double tap or timeout
+        case dragOrDouble(Button, pressed: Bool) // a new touch arrived after the tap
+        case dragging(Button)                    // button is down until all fingers lift
 
         var description: String {
             switch self {
             case .idle: return "idle"
-            case .tapped(let b): return "tapped(\(b))"
-            case .dragOrDouble(let b): return "dragOrDouble(\(b))"
+            case .tapped(let b, let p): return "tapped(\(b)\(p ? "" : ", not pressed"))"
+            case .dragOrDouble(let b, let p): return "dragOrDouble(\(b)\(p ? "" : ", not pressed"))"
             case .dragging(let b): return "dragging(\(b))"
             }
         }
@@ -219,12 +254,13 @@ final class Engine {
             }
         }
 
-        if case .dragOrDouble(let b) = state {
+        if case .dragOrDouble(let b, let pressed) = state {
             if seqMaxFingers > 1 {
                 // More fingers: not a drag. Release and judge this sequence on its own.
                 poster.up()
                 state = .idle
             } else if seqMoved || time - seqStart > config.tapTime {
+                if !pressed { poster.down(b) }
                 state = .dragging(b)
             }
         }
@@ -239,9 +275,9 @@ final class Engine {
         seqStartPos = [:]
         seqMoved = false
         seqInvalid = false
-        if case .tapped(let b) = state {
+        if case .tapped(let b, let pressed) = state {
             timerGeneration += 1
-            state = .dragOrDouble(b)
+            state = .dragOrDouble(b, pressed: pressed)
         }
     }
 
@@ -271,8 +307,14 @@ final class Engine {
 
     private func tap(fingers: Int) {
         guard let button = Button(fingers: fingers) else { return }
-        poster.down(button)
-        state = .tapped(button)
+        let click = config.clickEnabled.contains(button)
+        guard config.dragEnabled.contains(button) else {
+            // No drag to wait for: click right away.
+            if click { poster.click(button) }
+            return
+        }
+        if click { poster.down(button) }
+        state = .tapped(button, pressed: click)
         timerGeneration += 1
         let gen = timerGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + config.dragTimeout) { [self] in
@@ -461,7 +503,10 @@ func requirePostAccess() {
     }
 }
 
-config.load(from: .standard)
+UserDefaults.standard.register(defaults: Config.registeredDefaults)
+// Command-line timings go into the argument domain, so they win over saved
+// settings for this run, also when config is reloaded after a settings change.
+var cliOverrides: [String: Any] = [:]
 var args = Array(CommandLine.arguments.dropFirst())
 while let arg = args.first {
     args.removeFirst()
@@ -473,10 +518,10 @@ while let arg = args.first {
     switch arg {
     case _ where arg.hasPrefix("-psn_"): break // added by older Finder/LaunchServices
     case "--debug": config.debug = true
-    case "--tap-time": config.tapTime = value()
-    case "--drag-timeout": config.dragTimeout = value()
-    case "--move-threshold": config.moveThreshold = value()
-    case "--click-gap": config.clickGap = value()
+    case "--tap-time": cliOverrides["tapTime"] = value()
+    case "--drag-timeout": cliOverrides["dragTimeout"] = value()
+    case "--move-threshold": cliOverrides["moveThreshold"] = value()
+    case "--click-gap": cliOverrides["clickGap"] = value()
     case "--test-click":
         let names: [String: Button] = ["left": .left, "right": .right, "middle": .middle]
         guard let name = args.first, let button = names[name] else { usage() }
@@ -494,6 +539,13 @@ while let arg = args.first {
     default: usage()
     }
 }
+
+if !cliOverrides.isEmpty {
+    let argDomain = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+    UserDefaults.standard.setVolatileDomain(argDomain.merging(cliOverrides) { $1 },
+                                           forName: UserDefaults.argumentDomain)
+}
+config.load(from: .standard)
 
 // Never leave a button stuck down on exit.
 var signalSources: [DispatchSourceSignal] = []

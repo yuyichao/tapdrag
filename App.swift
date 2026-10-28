@@ -8,6 +8,7 @@ final class AppController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private var deviceManager: DeviceManager?
     private var permissionTimer: Timer?
+    private let settingsWindow = SettingsWindowController()
 
     private var enabled: Bool {
         get { UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true }
@@ -20,6 +21,12 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false // honor the isEnabled values set in menuNeedsUpdate
         statusItem.menu = menu
+
+        // The Settings window writes UserDefaults; apply changes immediately.
+        NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
+            config.load(from: .standard)
+        }
 
         if CGPreflightPostEventAccess() {
             activate()
@@ -91,6 +98,7 @@ final class AppController: NSObject, NSMenuDelegate {
         restart.toolTip = "Use after connecting a Magic Trackpad"
         restart.isEnabled = deviceManager != nil && enabled
         menu.addItem(restart)
+        menu.addItem(item("Settings…", #selector(showSettings), key: ","))
         menu.addItem(.separator())
 
         let debugItem = item("Debug Logging", #selector(toggleDebugLogging))
@@ -144,6 +152,10 @@ final class AppController: NSObject, NSMenuDelegate {
             NSApp.activate()
             alert.runModal()
         }
+    }
+
+    @objc private func showSettings() {
+        settingsWindow.show()
     }
 
     @objc private func restartDevices() {

@@ -76,6 +76,8 @@ The menu has these items:
 - **Start at Login**: launch tapdrag when you log in. It shows under System
   Settings → General → Login Items.
 - **Restart Touch Devices**: use after connecting a Magic Trackpad.
+- **Settings…** (⌘,): turn each gesture on or off and adjust the timings. See
+  [Settings](#settings).
 - **Debug Logging** / **Show Log**: write every touch sequence, state change
   and posted click to `~/Library/Logs/tapdrag.log`.
 
@@ -113,17 +115,33 @@ Programs started from Terminal use *Terminal's* Accessibility permission, not
 tapdrag's. Allow Terminal (or your terminal app) once for this test, and remove
 it afterwards if you like.
 
-## Tuning
+## Settings
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `tapTime` | 0.20 | longest touch, in seconds, that counts as a tap |
-| `dragTimeout` | 0.30 | seconds after a tap in which a touch starts a drag or double tap |
-| `moveThreshold` | 0.03 | how far fingers may move during a tap, as a fraction of pad size |
-| `clickGap` | 0.05 | minimum seconds between a release and the next press. libinput in the guest drops a release and press closer than ~25 ms as switch bounce, which turns a double click into one click |
+Open **Settings…** from the menu bar icon. Changes apply immediately.
 
-Set them with `defaults write local.tapdrag tapTime -float 0.25`, then quit and
-reopen tapdrag. The same settings are also command-line flags
-(`--tap-time`, `--drag-timeout`, `--move-threshold`, `--click-gap`, `--debug` to log to
-stderr) for running the binary from Terminal. Quit the app first, or both copies
-will click.
+**Gestures**: a Click and a Drag switch for each finger count (1 = left,
+2 = right, 3 = middle). All are on by default.
+
+- With only Click on, the click is sent as soon as the fingers lift, without
+  waiting for the drag window.
+- With only Drag on, a tap alone does nothing. The button is pressed only when
+  a finger comes back and holds or moves.
+
+**Timing**:
+
+| Setting | Key | Default | Meaning |
+|---|---|---|---|
+| Tap time | `tapTime` | 0.20 s | longest touch that counts as a tap |
+| Drag window | `dragTimeout` | 0.30 s | time after a tap in which a touch starts a drag or double tap |
+| Movement allowed | `moveThreshold` | 0.03 | how far fingers may move during a tap, as a fraction of pad size |
+| Click gap | `clickGap` | 0.05 s | minimum time between a release and the next press, and how long a click is held when that gesture's drag is off. libinput in the guest drops a release and press closer than ~25 ms as switch bounce, which turns a double click into one click |
+
+Settings are stored in the `local.tapdrag` preferences, so
+`defaults write local.tapdrag tapTime -float 0.25` also works. Restart tapdrag
+after changing them that way. The gesture switches use the keys `leftClick`,
+`leftDrag`, `rightClick`, `rightDrag`, `middleClick` and `middleDrag`.
+
+The timings are also command-line flags (`--tap-time`, `--drag-timeout`,
+`--move-threshold`, `--click-gap`, plus `--debug` to log to stderr) for running
+the binary from Terminal. They override the saved settings for that run. Quit
+the app first, or both copies will click.
