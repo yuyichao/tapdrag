@@ -37,17 +37,19 @@ cmake --build build                  # build/tapdrag.app
 cmake --build build --target dmg     # build/tapdrag-0.1.0.dmg
 ```
 
-The app is ad-hoc signed by default. macOS ties the Accessibility permission to
-the signature, so after every rebuild you have to remove tapdrag from the
-Accessibility list and add it again. If you have a signing certificate, such as
-the free "Apple Development" one that Xcode makes for an Apple ID, configure
-with `-DTAPDRAG_SIGN_IDENTITY="Apple Development: …"` and the permission
-survives rebuilds.
+The build signs the app with the **tapdrag Code Signing** certificate if it is
+in your keychain (see [Signing certificate](#signing-certificate)). Otherwise
+it is ad-hoc signed, and after every rebuild you have to remove tapdrag from
+the Accessibility list and add it again. CMake prints which one it uses
+(`-- Signing: …`). To use a different certificate, configure with
+`-DTAPDRAG_SIGN_IDENTITY="…"`; `-` forces ad-hoc signing.
 
 GitHub Actions builds the disk image (arm64 only) on every push. Download it
-from the run's **tapdrag-dmg** artifact. That build is ad-hoc signed and comes
-from the internet, so macOS blocks it on first launch. Allow it under System
-Settings → Privacy & Security → **Open Anyway**.
+from the run's **tapdrag-dmg** artifact. It is signed with the same
+certificate when the repository has the signing secrets; pull requests from
+forks are ad-hoc signed. The image comes from the internet and isn't notarized,
+so macOS blocks it on first launch. Allow it under System Settings → Privacy &
+Security → **Open Anyway**.
 
 To make a release, push a version tag:
 ```
@@ -57,7 +59,67 @@ git push origin v0.2.0
 The Release workflow builds `tapdrag-0.2.0.dmg` with the version taken from
 the tag, then creates a GitHub release with the image attached. Tags must be
 `v` followed by numbers only, such as `v1`, `v1.2` or `v1.2.3`. A tag like
-`v1.0-rc1` is rejected.
+`v1.0-rc1` is rejected. A release fails if the signing secrets are missing.
+
+### Signing certificate
+
+macOS ties the Accessibility permission to the app's signing identity. An
+ad-hoc signature changes with every build, so each upgrade looks like a new app.
+Signed with a certificate, the identity is "`local.tapdrag` signed by this
+certificate", which stays the same, and the permission survives upgrades. A
+self-signed certificate is enough; macOS doesn't need to trust it for this.
+
+Use one certificate for both local and GitHub builds, so either can replace the
+other. To create it and store it:
+
+1. In a private folder, create a certificate valid for 20 years:
+   ```
+   openssl req -x509 -newkey rsa:2048 -sha256 -days 7300 -nodes \
+     -keyout tapdrag-signing.key -out tapdrag-signing.crt \
+     -subj "/CN=tapdrag Code Signing" \
+     -addext "basicConstraints=critical,CA:false" \
+     -addext "keyUsage=critical,digitalSignature" \
+     -addext "extendedKeyUsage=critical,codeSigning"
+   ```
+   Use the system `openssl` (`/usr/bin/openssl`). With a Homebrew OpenSSL 3,
+   add `-legacy` to the next command, or macOS can't import the file.
+2. Package the certificate and key into a password-protected file. It asks for
+   a password; you need it in the next two steps:
+   ```
+   openssl pkcs12 -export -inkey tapdrag-signing.key -in tapdrag-signing.crt \
+     -name "tapdrag Code Signing" -out tapdrag-signing.p12
+   ```
+3. Import it into your login keychain for local builds, allowing `codesign` to
+   use it without asking:
+   ```
+   security import tapdrag-signing.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign
+   ```
+   `security find-identity -p codesigning` should now list
+   "tapdrag Code Signing". The `CSSMERR_TP_NOT_TRUSTED` note next to it is
+   expected and harmless.
+4. Add two repository secrets on GitHub, under Settings → Secrets and
+   variables → Actions → **New repository secret**:
+   - `SIGNING_CERT_P12`: the file, base64-encoded. This copies it to the
+     clipboard:
+     ```
+     base64 -i tapdrag-signing.p12 | pbcopy
+     ```
+   - `SIGNING_CERT_PASSWORD`: the password from step 2.
+5. Delete the unprotected key and the certificate:
+   ```
+   rm tapdrag-signing.key tapdrag-signing.crt
+   ```
+   Keep `tapdrag-signing.p12` somewhere safe, such as a password manager, if
+   you want to sign on another Mac later; otherwise delete it too. Anyone with
+   the key can sign programs that macOS treats as tapdrag.
+6. Reconfigure an existing build folder so CMake picks up the certificate:
+   ```
+   cmake -B build -DTAPDRAG_SIGN_IDENTITY=
+   ```
+   Then build, install, and grant Accessibility one last time.
+
+If you ever replace the certificate, the identity changes once and you grant
+Accessibility again.
 
 ## Installing
 

@@ -28,6 +28,10 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       version: ${{ needs.version.outputs.version }}
+      # Releases must carry the stable signature, or upgrading would reset
+      # the Accessibility permission.
+      require-signing: true
+    secrets: inherit
 
   release:
     needs: [version, build]

@@ -12,6 +12,10 @@ on:
         description: Version to build (e.g. 1.2.3); empty keeps the CMakeLists default
         type: string
         default: ''
+      require-signing:
+        description: Fail instead of falling back to ad-hoc signing when the certificate secret is missing
+        type: boolean
+        default: false
 
 jobs:
   dmg:
@@ -28,6 +32,40 @@ jobs:
           cmake --version | head -1
           ninja --version
           swiftc --version
+
+      # The SIGNING_CERT_P12 / SIGNING_CERT_PASSWORD secrets hold the
+      # "tapdrag Code Signing" certificate (see README.md). With it, every build
+      # has the same signing identity, so macOS keeps the Accessibility grant
+      # across upgrades. Without it (e.g. pull requests from forks) the build is
+      # ad-hoc signed.
+      - name: Import signing certificate
+        env:
+          CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+          REQUIRE_SIGNING: ${{ inputs.require-signing }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            if [ "$REQUIRE_SIGNING" = true ]; then
+              echo "::error::SIGNING_CERT_P12 secret is not set"
+              exit 1
+            fi
+            echo "::notice::SIGNING_CERT_P12 secret is not set; building ad-hoc signed"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign >/dev/null
+          rm "$RUNNER_TEMP/signing.p12"
+          # Let codesign use the key without a GUI prompt.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          # Add to the search list so CMake finds the identity.
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -p codesigning "$keychain"
 
       - name: Configure
         env:
@@ -48,10 +86,28 @@ jobs:
           exit 1
 
       - name: Check bundle signature
-        run: codesign --verify --deep --strict --verbose=2 build/tapdrag.app
+        env:
+          REQUIRE_SIGNING: ${{ inputs.require-signing }}
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/tapdrag.app
+          requirement="$(codesign -d -r- build/tapdrag.app 2>&1 | grep 'designated =>')"
+          echo "$requirement"
+          if [[ "$requirement" == *cdhash* ]]; then
+            if [ "$REQUIRE_SIGNING" = true ]; then
+              echo "::error::release build is ad-hoc signed"
+              exit 1
+            fi
+            echo "::notice::ad-hoc signed build"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: tapdrag-dmg
           path: build/tapdrag-*.dmg
           if-no-files-found: error
+
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          if [ -f "$keychain" ]; then security delete-keychain "$keychain"; fi

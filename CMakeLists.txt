@@ -15,11 +15,29 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 set(TAPDRAG_BUNDLE_ID local.tapdrag CACHE STRING "Bundle identifier")
-set(TAPDRAG_SIGN_IDENTITY "-" CACHE STRING
-  "codesign identity. \"-\" (ad-hoc) means Accessibility must be granted again after every rebuild. \
-A real certificate (e.g. \"Apple Development: …\") keeps the grant.")
+set(TAPDRAG_SIGN_IDENTITY "" CACHE STRING
+  "codesign identity. Empty: \"tapdrag Code Signing\" if it is in the keychain, else ad-hoc (\"-\"). \
+With ad-hoc signing Accessibility must be granted again after every rebuild.")
 
 find_program(CODESIGN codesign REQUIRED)
+
+# Without the certificate every build gets a new identity and macOS forgets
+# the Accessibility grant. See "Signing certificate" in README.md.
+set(sign_identity "${TAPDRAG_SIGN_IDENTITY}")
+if(sign_identity STREQUAL "")
+  execute_process(COMMAND security find-identity -p codesigning
+    OUTPUT_VARIABLE identities ERROR_QUIET)
+  if(identities MATCHES "\"tapdrag Code Signing\"")
+    set(sign_identity "tapdrag Code Signing")
+  else()
+    set(sign_identity "-")
+  endif()
+endif()
+if(sign_identity STREQUAL "-")
+  message(STATUS "Signing: ad-hoc (Accessibility must be granted again after each rebuild)")
+else()
+  message(STATUS "Signing: ${sign_identity}")
+endif()
 
 set(CMAKE_Swift_COMPILATION_MODE "$<IF:$<CONFIG:Debug>,incremental,wholemodule>")
 
@@ -42,7 +60,7 @@ set_target_properties(tapdrag PROPERTIES
   MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
 
 add_custom_command(TARGET tapdrag POST_BUILD
-  COMMAND "${CODESIGN}" --force --sign "${TAPDRAG_SIGN_IDENTITY}" "$<TARGET_BUNDLE_DIR:tapdrag>"
+  COMMAND "${CODESIGN}" --force --sign "${sign_identity}" "$<TARGET_BUNDLE_DIR:tapdrag>"
   VERBATIM)
 
 # `cmake --install build` copies the bundle byte for byte, so the signature
