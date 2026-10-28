@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.29)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET 14.0 CACHE STRING "Minimum macOS version")
-project(tapdrag VERSION 0.1.0 LANGUAGES Swift)
+# The release workflow sets this from the git tag (v1.2.3 -> 1.2.3).
+set(TAPDRAG_VERSION 0.1.0 CACHE STRING "Version for the app bundle and disk image name")
+project(tapdrag VERSION ${TAPDRAG_VERSION} LANGUAGES Swift)
 
 # Swift needs the Ninja (or Xcode) generator: cmake -G Ninja -B build
 

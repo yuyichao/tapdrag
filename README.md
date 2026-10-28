@@ -49,6 +49,16 @@ from the run's **tapdrag-dmg** artifact. That build is ad-hoc signed and comes
 from the internet, so macOS blocks it on first launch. Allow it under System
 Settings → Privacy & Security → **Open Anyway**.
 
+To make a release, push a version tag:
+```
+git tag v0.2.0
+git push origin v0.2.0
+```
+The Release workflow builds `tapdrag-0.2.0.dmg` with the version taken from
+the tag, then creates a GitHub release with the image attached. Tags must be
+`v` followed by numbers only, such as `v1`, `v1.2` or `v1.2.3`. A tag like
+`v1.0-rc1` is rejected.
+
 ## Installing
 
 Open `tapdrag-0.1.0.dmg` and drag **tapdrag** onto **Applications**. Or run

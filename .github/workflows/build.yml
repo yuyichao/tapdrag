@@ -2,8 +2,16 @@ name: Build
 
 on:
   push:
+    # Tags are built by release.yml.
+    branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to build (e.g. 1.2.3); empty keeps the CMakeLists default
+        type: string
+        default: ''
 
 jobs:
   dmg:
@@ -22,7 +30,9 @@ jobs:
           swiftc --version
 
       - name: Configure
-        run: cmake -G Ninja -B build
+        env:
+          VERSION: ${{ inputs.version }}
+        run: cmake -G Ninja -B build ${VERSION:+-DTAPDRAG_VERSION=$VERSION}
 
       - name: Build app
         run: cmake --build build
