@@ -105,9 +105,10 @@ it afterwards if you like.
 | `tapTime` | 0.20 | longest touch, in seconds, that counts as a tap |
 | `dragTimeout` | 0.30 | seconds after a tap in which a touch starts a drag or double tap |
 | `moveThreshold` | 0.03 | how far fingers may move during a tap, as a fraction of pad size |
+| `clickGap` | 0.05 | minimum seconds between a release and the next press. libinput in the guest drops a release and press closer than ~25 ms as switch bounce, which turns a double click into one click |
 
 Set them with `defaults write local.tapdrag tapTime -float 0.25`, then quit and
 reopen tapdrag. The same settings are also command-line flags
-(`--tap-time`, `--drag-timeout`, `--move-threshold`, `--debug` to log to
+(`--tap-time`, `--drag-timeout`, `--move-threshold`, `--click-gap`, `--debug` to log to
 stderr) for running the binary from Terminal. Quit the app first, or both copies
 will click.

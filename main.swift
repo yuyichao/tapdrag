@@ -23,6 +23,7 @@ struct Config {
     var tapTime = 0.20       // max seconds a touch sequence may last to count as a tap
     var dragTimeout = 0.30   // seconds after a tap during which a new touch starts a drag/double tap
     var moveThreshold = 0.03 // max normalized finger travel (0..1 of pad size) for a tap
+    var clickGap = 0.05      // min seconds between a release and the next press (see Poster.down)
     var debug = false        // log to stderr
 
     /// Tunables can be persisted with e.g. `defaults write local.tapdrag tapTime -float 0.25`.
@@ -30,6 +31,7 @@ struct Config {
         if defaults.object(forKey: "tapTime") != nil { tapTime = defaults.double(forKey: "tapTime") }
         if defaults.object(forKey: "dragTimeout") != nil { dragTimeout = defaults.double(forKey: "dragTimeout") }
         if defaults.object(forKey: "moveThreshold") != nil { moveThreshold = defaults.double(forKey: "moveThreshold") }
+        if defaults.object(forKey: "clickGap") != nil { clickGap = defaults.double(forKey: "clickGap") }
     }
 }
 
@@ -106,6 +108,7 @@ final class Poster {
     private(set) var held: Button?
     private var heldClickState: Int64 = 1
     private var lastDown: (time: TimeInterval, button: Button, location: CGPoint, clickState: Int64)?
+    private var lastUp: TimeInterval = 0
 
     private func post(_ type: CGEventType, _ button: Button, at loc: CGPoint, clickState: Int64) {
         guard let ev = CGEvent(mouseEventSource: source, mouseType: type,
@@ -118,6 +121,13 @@ final class Poster {
 
     func down(_ button: Button) {
         if held != nil { up() }
+        // libinput in a Linux guest treats a release followed by a press within
+        // ~25 ms as switch bounce and drops both, so a double tap would arrive
+        // as one click. Keep the press clear of the previous release.
+        let sinceUp = ProcessInfo.processInfo.systemUptime - lastUp
+        if sinceUp < config.clickGap {
+            usleep(useconds_t((config.clickGap - sinceUp) * 1_000_000))
+        }
         let loc = cursorLocation()
         let now = ProcessInfo.processInfo.systemUptime
         var clickState: Int64 = 1
@@ -137,6 +147,7 @@ final class Poster {
         guard let button = held else { return }
         post(button.upType, button, at: cursorLocation(), clickState: heldClickState)
         held = nil
+        lastUp = ProcessInfo.processInfo.systemUptime
         log("POST \(button) up")
     }
 }
@@ -426,11 +437,13 @@ final class DeviceManager {
 func usage() -> Never {
     print("""
     usage: tapdrag [--debug] [--tap-time SEC] [--drag-timeout SEC] [--move-threshold FRAC]
+                   [--click-gap SEC]
            tapdrag --test-click left|right|middle [DELAY_SEC]
 
       --tap-time        max duration of a tap (default \(config.tapTime))
       --drag-timeout    time after a tap to start a drag / double tap (default \(config.dragTimeout))
       --move-threshold  max finger travel for a tap, fraction of pad size (default \(config.moveThreshold))
+      --click-gap       min time between a release and the next press (default \(config.clickGap))
       --debug           log touches, state transitions and posted events to stderr
       --test-click      post one click at the cursor after DELAY_SEC (default 3) and exit
     """)
@@ -463,6 +476,7 @@ while let arg = args.first {
     case "--tap-time": config.tapTime = value()
     case "--drag-timeout": config.dragTimeout = value()
     case "--move-threshold": config.moveThreshold = value()
+    case "--click-gap": config.clickGap = value()
     case "--test-click":
         let names: [String: Button] = ["left": .left, "right": .right, "middle": .middle]
         guard let name = args.first, let button = names[name] else { usage() }
