@@ -26,6 +26,9 @@ struct Config {
     var clickGap = 0.05      // min seconds between a release and the next press (see Poster.down)
     var clickEnabled = Set(Button.allCases) // N-finger tap clicks
     var dragEnabled = Set(Button.allCases)  // N-finger tap, then hold, drags
+    var ignoreTapsWhileTyping = true    // palm rejection for taps
+    var ignoreScrollWhileTyping = false // drop trackpad scrolling too
+    var typingTimeout = 0.5  // seconds after the last key press that count as typing
     var debug = false        // log to stderr
 
     // UserDefaults keys. Settings are edited in the Settings window, or with e.g.
@@ -36,7 +39,10 @@ struct Config {
     static var registeredDefaults: [String: Any] {
         let c = Config()
         var d: [String: Any] = ["tapTime": c.tapTime, "dragTimeout": c.dragTimeout,
-                                "moveThreshold": c.moveThreshold, "clickGap": c.clickGap]
+                                "moveThreshold": c.moveThreshold, "clickGap": c.clickGap,
+                                "ignoreTapsWhileTyping": c.ignoreTapsWhileTyping,
+                                "ignoreScrollWhileTyping": c.ignoreScrollWhileTyping,
+                                "typingTimeout": c.typingTimeout]
         for b in Button.allCases {
             d[clickKey(b)] = true
             d[dragKey(b)] = true
@@ -52,6 +58,9 @@ struct Config {
         clickGap = defaults.double(forKey: "clickGap")
         clickEnabled = Set(Button.allCases.filter { defaults.bool(forKey: Config.clickKey($0)) })
         dragEnabled = Set(Button.allCases.filter { defaults.bool(forKey: Config.dragKey($0)) })
+        ignoreTapsWhileTyping = defaults.bool(forKey: "ignoreTapsWhileTyping")
+        ignoreScrollWhileTyping = defaults.bool(forKey: "ignoreScrollWhileTyping")
+        typingTimeout = defaults.double(forKey: "typingTimeout")
     }
 }
 
@@ -232,6 +241,7 @@ final class Engine {
     private var seqStartPos: [String: (Float, Float)] = [:]
     private var seqMoved = false
     private var seqInvalid = false
+    private var lastKeyTime = -Double.infinity // systemUptime of the last typing key press
     private var lastCount = 0
 
     func frame(device: Int, touches: [Touch], time: Double) {
@@ -281,6 +291,10 @@ final class Engine {
         seqStartPos = [:]
         seqMoved = false
         seqInvalid = false
+        if config.ignoreTapsWhileTyping && isTyping {
+            seqInvalid = true
+            log("touch while typing: not a tap")
+        }
         if case .tapped(let b, let pressed) = state {
             timerGeneration += 1
             state = .dragOrDouble(b, pressed: pressed)
@@ -330,6 +344,22 @@ final class Engine {
         }
     }
 
+    var isTyping: Bool {
+        ProcessInfo.processInfo.systemUptime - lastKeyTime < config.typingTimeout
+    }
+
+    /// A key press that counts as typing (palm rejection, like libinput's
+    /// disable-while-typing). Touches already on the pad stop being tap
+    /// candidates; drags in progress are left alone.
+    func typingKey() {
+        if !isTyping { log("typing") }
+        lastKeyTime = ProcessInfo.processInfo.systemUptime
+        if config.ignoreTapsWhileTyping && seqActive && !seqInvalid {
+            seqInvalid = true
+            log("key during touch: not a tap")
+        }
+    }
+
     /// A real (physical) button press: never turn the current touches into a tap,
     /// and drop any synthetic button we are holding.
     func physicalButton() {
@@ -373,14 +403,42 @@ let tapCallback: CGEventTapCallBack = { _, type, event, _ in
     case .leftMouseDown, .rightMouseDown, .otherMouseDown:
         log("physical \(type.rawValue)")
         engine.physicalButton()
+    case .keyDown:
+        // Shortcuts (⌘/⌃ + key) aren't typing; they are often used together with
+        // the trackpad. Neither are Esc or modifier keys pressed on their own.
+        // Only the time is recorded, never which key.
+        if event.flags.isDisjoint(with: [.maskCommand, .maskControl])
+            && !nonTypingKeys.contains(event.getIntegerValueField(.keyboardEventKeycode)) {
+            engine.typingKey()
+        }
+    case .scrollWheel:
+        // Continuous scrolling comes from the trackpad (or a Magic Mouse), not a wheel.
+        if config.ignoreScrollWhileTyping && engine.isTyping
+            && event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 {
+            return nil
+        }
     default:
         break
     }
     return Unmanaged.passUnretained(event)
 }
 
+// Virtual key codes (HIToolbox Events.h) that don't count as typing: Esc, and the
+// modifiers. Modifiers normally arrive as flagsChanged, which the tap doesn't
+// watch, but key remappers can post them as keyDown.
+let nonTypingKeys: Set<Int64> = [
+    53,                     // Escape
+    54, 55,                 // right/left Command
+    56, 60,                 // left/right Shift
+    57,                     // Caps Lock
+    58, 61,                 // left/right Option
+    59, 62,                 // left/right Control
+    63, 179,                // fn / Globe
+]
+
 func installEventTap() {
-    let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+    let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+                                .keyDown, .scrollWheel]
     let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
     guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                       options: .defaultTap, eventsOfInterest: mask,

@@ -19,6 +19,10 @@ struct SettingsView: View {
     @AppStorage("moveThreshold") private var moveThreshold = d.moveThreshold
     @AppStorage("clickGap") private var clickGap = d.clickGap
 
+    @AppStorage("ignoreTapsWhileTyping") private var ignoreTapsWhileTyping = d.ignoreTapsWhileTyping
+    @AppStorage("ignoreScrollWhileTyping") private var ignoreScrollWhileTyping = d.ignoreScrollWhileTyping
+    @AppStorage("typingTimeout") private var typingTimeout = d.typingTimeout
+
     var body: some View {
         Form {
             Section {
@@ -38,6 +42,23 @@ struct SettingsView: View {
             } footer: {
                 Text("Drag: tap, then put one finger back down within the drag window and "
                      + "hold or move it. The button is released when the finger lifts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Ignore taps while typing", isOn: $ignoreTapsWhileTyping)
+                Toggle("Ignore trackpad scrolling while typing", isOn: $ignoreScrollWhileTyping)
+                timingRow("Typing timeout", "How long after the last key press the trackpad counts as "
+                          + "resting palms. Shortcuts with ⌘ or ⌃, Esc, and modifier keys "
+                          + "on their own don't count as typing.",
+                          $typingTimeout, 0.1...2.0, step: 0.05, ms(typingTimeout))
+                    .disabled(!ignoreTapsWhileTyping && !ignoreScrollWhileTyping)
+            } header: {
+                Text("Palm Rejection")
+            } footer: {
+                Text("Pointer movement is left to macOS's own palm detection; tapdrag can't hold back "
+                     + "the cursor.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -63,8 +84,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
-        .fixedSize(horizontal: false, vertical: true)
+        // Taller than a small laptop screen with everything shown; the form scrolls.
+        .frame(width: 460, height: 720)
     }
 
     private func gestureRow(_ fingers: String, _ button: String,

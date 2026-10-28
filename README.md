@@ -197,6 +197,23 @@ Open **Settings…** from the menu bar icon. Changes apply immediately.
 
 | Setting | Key | Default | Meaning |
 |---|---|---|---|
+**Palm Rejection**: a key press counts as typing for the **Typing timeout**
+(default 500 ms). Key presses with ⌘ or ⌃ are shortcuts and don't count;
+neither do Esc and the modifier keys (Shift, Option, Caps Lock, fn) pressed on
+their own. Shift or Option with a letter still types a character, so it counts.
+tapdrag only records when a key was pressed, never which key.
+
+- **Ignore taps while typing** (on by default): a touch that starts while you
+  type, or that is still on the pad when you press a key, never becomes a tap.
+  A drag already in progress continues.
+- **Ignore trackpad scrolling while typing** (off by default): drops trackpad
+  scrolling while you type. Scroll wheels on mice aren't affected.
+
+Keys typed into password fields aren't visible to tapdrag (macOS's secure
+input), so they don't count as typing. Pointer movement isn't blocked: macOS
+moves the cursor before tapdrag sees the event, and has its own palm detection
+for that.
+
 | Tap time | `tapTime` | 0.20 s | longest touch that counts as a tap |
 | Drag window | `dragTimeout` | 0.30 s | time after a tap in which a touch starts a drag or double tap |
 | Movement allowed | `moveThreshold` | 0.03 | how far fingers may move during a tap, as a fraction of pad size |
@@ -205,7 +222,9 @@ Open **Settings…** from the menu bar icon. Changes apply immediately.
 Settings are stored in the `local.tapdrag` preferences, so
 `defaults write local.tapdrag tapTime -float 0.25` also works. Restart tapdrag
 after changing them that way. The gesture switches use the keys `leftClick`,
-`leftDrag`, `rightClick`, `rightDrag`, `middleClick` and `middleDrag`.
+`leftDrag`, `rightClick`, `rightDrag`, `middleClick` and `middleDrag`; palm
+rejection uses `ignoreTapsWhileTyping`, `ignoreScrollWhileTyping` and
+`typingTimeout`.
 
 The timings are also command-line flags (`--tap-time`, `--drag-timeout`,
 `--move-threshold`, `--click-gap`, plus `--debug` to log to stderr) for running
