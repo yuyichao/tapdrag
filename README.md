@@ -34,7 +34,7 @@ line tools.
 ```
 cmake -G Ninja -B build
 cmake --build build                  # build/tapdrag.app
-cmake --build build --target dmg     # build/tapdrag-0.1.0.dmg
+cmake --build build --target dmg     # build/tapdrag-<version>.dmg
 ```
 
 The build signs the app with the **tapdrag Code Signing** certificate if it is
@@ -60,6 +60,10 @@ The Release workflow builds `tapdrag-0.2.0.dmg` with the version taken from
 the tag, then creates a GitHub release with the image attached. Tags must be
 `v` followed by numbers only, such as `v1`, `v1.2` or `v1.2.3`. A tag like
 `v1.0-rc1` is rejected. A release fails if the signing secrets are missing.
+
+Local and branch builds use `default_version` in `CMakeLists.txt`; bump it
+when you tag a release. `-DTAPDRAG_VERSION=…` overrides it for one build
+folder, and `-DTAPDRAG_VERSION=` clears that override again.
 
 ### Signing certificate
 
@@ -125,7 +129,7 @@ the permission again.
 
 ## Installing
 
-Open `tapdrag-0.1.0.dmg` and drag **tapdrag** onto **Applications**. Or run
+Open `tapdrag-<version>.dmg` and drag **tapdrag** onto **Applications**. Or run
 `cmake --install build`, which puts it in `/Applications`; change that with
 `-DCMAKE_INSTALL_PREFIX=…`. Quit a running tapdrag before replacing it.
 
@@ -193,10 +197,6 @@ Open **Settings…** from the menu bar icon. Changes apply immediately.
 - With only Drag on, a tap alone does nothing. The button is pressed only when
   a finger comes back and holds or moves.
 
-**Timing**:
-
-| Setting | Key | Default | Meaning |
-|---|---|---|---|
 **Palm Rejection**: a key press counts as typing for the **Typing timeout**
 (default 500 ms). Key presses with ⌘ or ⌃ are shortcuts and don't count;
 neither do Esc and the modifier keys (Shift, Option, Caps Lock, fn) pressed on
@@ -214,6 +214,10 @@ input), so they don't count as typing. Pointer movement isn't blocked: macOS
 moves the cursor before tapdrag sees the event, and has its own palm detection
 for that.
 
+**Timing**:
+
+| Setting | Key | Default | Meaning |
+|---|---|---|---|
 | Tap time | `tapTime` | 0.20 s | longest touch that counts as a tap |
 | Drag window | `dragTimeout` | 0.30 s | time after a tap in which a touch starts a drag or double tap |
 | Movement allowed | `moveThreshold` | 0.03 | how far fingers may move during a tap, as a fraction of pad size |
