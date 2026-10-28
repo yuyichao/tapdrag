@@ -44,6 +44,11 @@ the free "Apple Development" one that Xcode makes for an Apple ID, configure
 with `-DTAPDRAG_SIGN_IDENTITY="Apple Development: …"` and the permission
 survives rebuilds.
 
+GitHub Actions builds the disk image (arm64 only) on every push. Download it
+from the run's **tapdrag-dmg** artifact. That build is ad-hoc signed and comes
+from the internet, so macOS blocks it on first launch. Allow it under System
+Settings → Privacy & Security → **Open Anyway**.
+
 ## Installing
 
 Open `tapdrag-0.1.0.dmg` and drag **tapdrag** onto **Applications**. Or run
