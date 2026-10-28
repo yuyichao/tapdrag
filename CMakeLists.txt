@@ -1,18 +1,21 @@
 cmake_minimum_required(VERSION 3.29)
-project(tapdrag LANGUAGES Swift)
+
+set(CMAKE_OSX_DEPLOYMENT_TARGET 14.0 CACHE STRING "Minimum macOS version")
+project(tapdrag VERSION 0.1.0 LANGUAGES Swift)
 
 # Swift needs the Ninja (or Xcode) generator: cmake -G Ninja -B build
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/.local" CACHE PATH "Install prefix" FORCE)
+  set(CMAKE_INSTALL_PREFIX "/Applications" CACHE PATH "Where `cmake --install` puts tapdrag.app" FORCE)
 endif()
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-option(TAPDRAG_INSTALL_AGENT "Install the LaunchAgent and (re)start it on install" ON)
-
-include(GNUInstallDirs)
+set(TAPDRAG_BUNDLE_ID local.tapdrag CACHE STRING "Bundle identifier")
+set(TAPDRAG_SIGN_IDENTITY "-" CACHE STRING
+  "codesign identity. \"-\" (ad-hoc) means Accessibility must be granted again after every rebuild. \
+A real certificate (e.g. \"Apple Development: …\") keeps the grant.")
 
 find_program(CODESIGN codesign REQUIRED)
 
@@ -27,38 +30,42 @@ add_custom_command(OUTPUT "${bridge_stamp}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/MTBridge.h"
   VERBATIM)
 
-add_executable(tapdrag main.swift "${bridge_stamp}")
+add_executable(tapdrag MACOSX_BUNDLE main.swift App.swift "${bridge_stamp}")
 target_compile_options(tapdrag PRIVATE
   "SHELL:-import-objc-header ${CMAKE_CURRENT_SOURCE_DIR}/MTBridge.h")
+set_target_properties(tapdrag PROPERTIES
+  MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
+  MACOSX_BUNDLE_GUI_IDENTIFIER "${TAPDRAG_BUNDLE_ID}"
+  MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+  MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
 
-# A stable signing identifier. The Accessibility grant still has to be
-# renewed after each rebuild, because the ad-hoc signature changes.
 add_custom_command(TARGET tapdrag POST_BUILD
-  COMMAND "${CODESIGN}" -s - -f --identifier local.tapdrag "$<TARGET_FILE:tapdrag>"
+  COMMAND "${CODESIGN}" --force --sign "${TAPDRAG_SIGN_IDENTITY}" "$<TARGET_BUNDLE_DIR:tapdrag>"
   VERBATIM)
 
-# Install
-
-set(TAPDRAG_LABEL local.tapdrag)
-set(TAPDRAG_BIN "${CMAKE_INSTALL_FULL_BINDIR}/tapdrag")
-set(TAPDRAG_PLIST "$ENV{HOME}/Library/LaunchAgents/${TAPDRAG_LABEL}.plist")
-set(TAPDRAG_LOG "$ENV{HOME}/Library/Logs/tapdrag.log")
-
-configure_file(cmake/launchagent.plist.in "${TAPDRAG_LABEL}.plist" @ONLY)
-configure_file(cmake/launchagent.cmake.in launchagent.cmake @ONLY)
-set(launchagent_script "${CMAKE_CURRENT_BINARY_DIR}/launchagent.cmake")
-
-# Stop the running agent and remove the old binary before copying the new one.
-install(CODE "set(ACTION stop)\ninclude(\"${launchagent_script}\")")
-# install(PROGRAMS) copies the file byte for byte. install(TARGETS) may rewrite
-# rpaths, and that would break the signature.
-install(PROGRAMS "$<TARGET_FILE:tapdrag>" DESTINATION "${CMAKE_INSTALL_BINDIR}")
-if(TAPDRAG_INSTALL_AGENT)
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${TAPDRAG_LABEL}.plist"
-    DESTINATION "$ENV{HOME}/Library/LaunchAgents")
-  install(CODE "set(ACTION start)\ninclude(\"${launchagent_script}\")")
-endif()
+# `cmake --install build` copies the bundle byte for byte, so the signature
+# stays valid. The old bundle is removed first: overwriting a signed binary in
+# place can make macOS kill the new one when it launches.
+set(app_dest "${CMAKE_INSTALL_PREFIX}/tapdrag.app")
+install(CODE "file(REMOVE_RECURSE \"\$ENV{DESTDIR}${app_dest}\")")
+install(DIRECTORY "$<TARGET_BUNDLE_DIR:tapdrag>" DESTINATION . USE_SOURCE_PERMISSIONS)
 
 add_custom_target(uninstall
-  COMMAND "${CMAKE_COMMAND}" -DACTION=uninstall -P "${launchagent_script}"
+  COMMAND "${CMAKE_COMMAND}" -E rm -rf "${app_dest}"
+  COMMENT "Removing ${app_dest}"
+  VERBATIM)
+
+# `cmake --build build --target dmg`: a disk image with tapdrag.app and an
+# Applications link, for drag-and-drop installs.
+set(dmg_root "${CMAKE_CURRENT_BINARY_DIR}/dmg-root")
+set(dmg "${CMAKE_CURRENT_BINARY_DIR}/tapdrag-${PROJECT_VERSION}.dmg")
+add_custom_target(dmg
+  COMMAND "${CMAKE_COMMAND}" -E rm -rf "${dmg_root}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${dmg_root}"
+  COMMAND ditto "$<TARGET_BUNDLE_DIR:tapdrag>" "${dmg_root}/tapdrag.app"
+  COMMAND "${CMAKE_COMMAND}" -E create_symlink /Applications "${dmg_root}/Applications"
+  COMMAND hdiutil create -quiet -ov -volname tapdrag -fs HFS+ -format UDZO
+          -srcfolder "${dmg_root}" "${dmg}"
+  COMMENT "Creating ${dmg}"
+  DEPENDS tapdrag
   VERBATIM)

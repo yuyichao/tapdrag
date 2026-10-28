@@ -23,19 +23,33 @@ struct Config {
     var tapTime = 0.20       // max seconds a touch sequence may last to count as a tap
     var dragTimeout = 0.30   // seconds after a tap during which a new touch starts a drag/double tap
     var moveThreshold = 0.03 // max normalized finger travel (0..1 of pad size) for a tap
-    var debug = false
+    var debug = false        // log to stderr
+
+    /// Tunables can be persisted with e.g. `defaults write local.tapdrag tapTime -float 0.25`.
+    mutating func load(from defaults: UserDefaults) {
+        if defaults.object(forKey: "tapTime") != nil { tapTime = defaults.double(forKey: "tapTime") }
+        if defaults.object(forKey: "dragTimeout") != nil { dragTimeout = defaults.double(forKey: "dragTimeout") }
+        if defaults.object(forKey: "moveThreshold") != nil { moveThreshold = defaults.double(forKey: "moveThreshold") }
+    }
 }
 
 var config = Config()
 
+let logURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/tapdrag.log")
+var logFile: FileHandle? // set while "Debug Logging" is on in the menu
+
 func log(_ msg: @autoclosure () -> String) {
-    guard config.debug else { return }
+    guard config.debug || logFile != nil else { return }
     let t = String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
-    FileHandle.standardError.write("[\(t)] \(msg())\n".data(using: .utf8)!)
+    let line = "[\(t)] \(msg())\n".data(using: .utf8)!
+    if config.debug { FileHandle.standardError.write(line) }
+    logFile?.write(line)
 }
 
 func fail(_ msg: String) -> Never {
-    FileHandle.standardError.write("tapdrag: \(msg)\n".data(using: .utf8)!)
+    let line = "tapdrag: \(msg)\n".data(using: .utf8)!
+    FileHandle.standardError.write(line)
+    logFile?.write(line)
     exit(1)
 }
 
@@ -388,6 +402,8 @@ final class DeviceManager {
         log("listening to \(deviceRefs.count) multitouch device(s)")
     }
 
+    var isRunning: Bool { devices != nil }
+
     func stop() {
         for d in deviceRefs {
             api.unregister(d, mtCallback)
@@ -421,18 +437,18 @@ func usage() -> Never {
     exit(2)
 }
 
-/// Prompts once, then waits until Accessibility is granted (so launchd doesn't
-/// restart us into a prompt loop).
+/// For --test-click: prompts once, then waits until Accessibility is granted.
 func requirePostAccess() {
     guard !CGPreflightPostEventAccess() else { return }
     _ = CGRequestPostEventAccess()
-    FileHandle.standardError.write(("tapdrag: waiting for Accessibility permission for \(CommandLine.arguments[0]) "
+    FileHandle.standardError.write(("tapdrag: waiting for Accessibility permission "
         + "(System Settings > Privacy & Security > Accessibility)\n").data(using: .utf8)!)
     while !CGPreflightPostEventAccess() {
         Thread.sleep(forTimeInterval: 2)
     }
 }
 
+config.load(from: .standard)
 var args = Array(CommandLine.arguments.dropFirst())
 while let arg = args.first {
     args.removeFirst()
@@ -442,6 +458,7 @@ while let arg = args.first {
         return v
     }
     switch arg {
+    case _ where arg.hasPrefix("-psn_"): break // added by older Finder/LaunchServices
     case "--debug": config.debug = true
     case "--tap-time": config.tapTime = value()
     case "--drag-timeout": config.dragTimeout = value()
@@ -464,21 +481,6 @@ while let arg = args.first {
     }
 }
 
-requirePostAccess()
-installEventTap()
-
-let deviceManager = DeviceManager()
-deviceManager.start()
-if deviceManager.count == 0 { fail("no multitouch devices found") }
-
-// Devices go stale across sleep. (After (re)connecting a Magic Trackpad,
-// restart the agent: launchctl kickstart -k gui/$UID/local.tapdrag)
-NSWorkspace.shared.notificationCenter.addObserver(
-    forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
-    log("wake: restarting devices")
-    deviceManager.restart()
-}
-
 // Never leave a button stuck down on exit.
 var signalSources: [DispatchSourceSignal] = []
 for sig in [SIGINT, SIGTERM, SIGHUP] {
@@ -492,7 +494,8 @@ for sig in [SIGINT, SIGTERM, SIGHUP] {
     signalSources.append(s)
 }
 
-FileHandle.standardError.write("tapdrag running (\(deviceManager.count) device(s))\n".data(using: .utf8)!)
 let app = NSApplication.shared
-app.setActivationPolicy(.prohibited)
+app.setActivationPolicy(.accessory)
+let controller = AppController()
+controller.start()
 app.run()
